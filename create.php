@@ -8,11 +8,30 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     $year_level = mysqli_real_escape_string($conn, $_POST['year_level']);
     $address    = mysqli_real_escape_string($conn, $_POST['address']);
 
-    $sql = "INSERT INTO university_students (full_name, student_id, email, phone, faculty, year_level, address)
-            VALUES ('$full_name','$student_id','$email','$phone','$faculty','$year_level','$address')";
-    if (mysqli_query($conn, $sql)) {
-        header("Location: index.php?msg=Student registered successfully!");
-        exit;
+    $errors = [];
+
+    // Full name: letters and spaces only, no digits
+    if (!preg_match('/^[a-zA-Z\s\'\-\.]+$/', $full_name)) {
+        $errors[] = "Full Name must contain letters only (no numbers).";
+    }
+
+    // Student ID: digits only (and optionally dashes like UNI-2024-001 → allow alphanumeric+dash)
+    if (!preg_match('/^[A-Z0-9\-]+$/i', $student_id)) {
+        $errors[] = "Student ID must contain only letters, numbers, and dashes.";
+    }
+
+    // Phone: digits, spaces, +, dashes only — no letters
+    if (!preg_match('/^[\d\s\+\-\(\)]+$/', $phone)) {
+        $errors[] = "Phone Number must contain digits only (no letters).";
+    }
+
+    if (empty($errors)) {
+        $sql = "INSERT INTO university_students (full_name, student_id, email, phone, faculty, year_level, address)
+                VALUES ('$full_name','$student_id','$email','$phone','$faculty','$year_level','$address')";
+        if (mysqli_query($conn, $sql)) {
+            header("Location: index.php?msg=Student registered successfully!");
+            exit;
+        }
     }
 }
 ?>
@@ -33,6 +52,8 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
       --accent2: #ff6584;
       --text: #f0f0f8;
       --muted: #7a7a9a;
+      --error: #ff4d6d;
+      --error-bg: rgba(255,77,109,0.08);
     }
     * { margin: 0; padding: 0; box-sizing: border-box; }
 
@@ -107,11 +128,28 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     .form-header h1 span {
       background: linear-gradient(90deg, var(--accent), var(--accent2));
       -webkit-background-clip: text;
-      background-clip: text;  
+      background-clip: text;
       -webkit-text-fill-color: transparent;
     }
 
     .form-header p { color: var(--muted); font-size: 15px; font-weight: 300; }
+
+    /* Server-side error box */
+    .error-box {
+      background: var(--error-bg);
+      border: 1px solid rgba(255,77,109,0.3);
+      border-radius: 14px;
+      padding: 16px 20px;
+      margin-bottom: 24px;
+      animation: slideUp 0.4s ease both;
+    }
+    .error-box ul { list-style: none; }
+    .error-box ul li {
+      color: var(--error);
+      font-size: 13px;
+      padding: 3px 0;
+    }
+    .error-box ul li::before { content: "⚠ "; }
 
     .form-card {
       background: var(--card);
@@ -170,6 +208,26 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
       box-shadow: 0 0 0 3px rgba(108,99,255,0.12);
     }
 
+    /* Inline field error state */
+    input.is-invalid, select.is-invalid, textarea.is-invalid {
+      border-color: var(--error) !important;
+      background: var(--error-bg) !important;
+      box-shadow: 0 0 0 3px rgba(255,77,109,0.12) !important;
+    }
+
+    .field-hint {
+      font-size: 11px;
+      color: var(--muted);
+      margin-top: 2px;
+    }
+
+    .field-error {
+      font-size: 11px;
+      color: var(--error);
+      margin-top: 2px;
+      display: none;
+    }
+
     select option { background: #1a1a26; color: var(--text); }
 
     textarea { resize: vertical; min-height: 90px; }
@@ -206,7 +264,6 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
 
     .btn-cancel:hover { border-color: rgba(255,77,109,0.4); color: #ff4d6d; }
 
-    /* Input animation on load */
     .form-group { animation: slideUp 0.4s ease both; }
     .form-group:nth-child(1) { animation-delay: 0.1s; }
     .form-group:nth-child(2) { animation-delay: 0.15s; }
@@ -238,30 +295,67 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     <p>Fill in the enrollment details to register a new student</p>
   </div>
 
+  <?php if (!empty($errors)): ?>
+  <div class="error-box">
+    <ul>
+      <?php foreach ($errors as $err): ?>
+        <li><?= htmlspecialchars($err) ?></li>
+      <?php endforeach; ?>
+    </ul>
+  </div>
+  <?php endif; ?>
+
   <div class="form-card">
-    <form method="POST">
+    <form method="POST" id="registerForm" novalidate>
 
       <div class="section-title">Personal Information</div>
       <div class="form-grid">
+
         <div class="form-group">
           <label>Full Name</label>
-          <input type="text" name="full_name" placeholder="e.g. Sophea Chan" required>
+          <!-- letters & spaces only — digits are blocked -->
+          <input type="text" name="full_name" id="full_name"
+                 placeholder="e.g. Sophea Chan"
+                 value="<?= isset($_POST['full_name']) ? htmlspecialchars($_POST['full_name']) : '' ?>"
+                 required>
+          <span class="field-hint">Letters only — no numbers</span>
+          <span class="field-error" id="full_name_err">Full name cannot contain digits.</span>
         </div>
+
         <div class="form-group">
           <label>Student ID</label>
-          <input type="text" name="student_id" placeholder="e.g. UNI-2024-001" required>
+          <!-- digits, letters, dashes only -->
+          <input type="text" name="student_id" id="student_id"
+                 placeholder="e.g. UNI-2024-001"
+                 value="<?= isset($_POST['student_id']) ? htmlspecialchars($_POST['student_id']) : '' ?>"
+                 required>
+          <span class="field-hint">Letters, numbers and dashes only</span>
+          <span class="field-error" id="student_id_err">Student ID can only contain letters, numbers, and dashes.</span>
         </div>
+
         <div class="form-group">
           <label>Email Address</label>
-          <input type="email" name="email" placeholder="student@university.edu" required>
+          <input type="email" name="email" id="email"
+                 placeholder="student@university.edu"
+                 value="<?= isset($_POST['email']) ? htmlspecialchars($_POST['email']) : '' ?>"
+                 required>
+          <span class="field-error" id="email_err">Please enter a valid email address.</span>
         </div>
+
         <div class="form-group">
           <label>Phone Number</label>
-          <input type="text" name="phone" placeholder="+855 12 345 678" required>
+          <!-- digits, +, -, spaces only — letters are blocked -->
+          <input type="text" name="phone" id="phone"
+                 placeholder="+855 12 345 678"
+                 value="<?= isset($_POST['phone']) ? htmlspecialchars($_POST['phone']) : '' ?>"
+                 required>
+          <span class="field-hint">Digits only — no letters</span>
+          <span class="field-error" id="phone_err">Phone number cannot contain letters.</span>
         </div>
+
         <div class="form-group full">
           <label>Address</label>
-          <textarea name="address" placeholder="Home address…"></textarea>
+          <textarea name="address" placeholder="Home address…"><?= isset($_POST['address']) ? htmlspecialchars($_POST['address']) : '' ?></textarea>
         </div>
       </div>
 
@@ -270,26 +364,27 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
         <div class="form-group">
           <label>Faculty / Department</label>
           <select name="faculty" required>
-            <option value="" disabled selected>Select faculty…</option>
-            <option>Computer Science</option>
-            <option>Engineering</option>
-            <option>Business Administration</option>
-            <option>Medicine</option>
-            <option>Law</option>
-            <option>Arts & Humanities</option>
-            <option>Natural Sciences</option>
-            <option>Education</option>
+            <option value="" disabled <?= !isset($_POST['faculty']) ? 'selected' : '' ?>>Select faculty…</option>
+            <?php
+              $faculties = ['Computer Science','Engineering','Business Administration','Medicine','Law','Arts & Humanities','Natural Sciences','Education'];
+              foreach ($faculties as $f) {
+                $sel = (isset($_POST['faculty']) && $_POST['faculty'] === $f) ? 'selected' : '';
+                echo "<option $sel>$f</option>";
+              }
+            ?>
           </select>
         </div>
         <div class="form-group">
           <label>Year Level</label>
           <select name="year_level" required>
-            <option value="" disabled selected>Select year…</option>
-            <option value="1">Year 1 — Freshman</option>
-            <option value="2">Year 2 — Sophomore</option>
-            <option value="3">Year 3 — Junior</option>
-            <option value="4">Year 4 — Senior</option>
-            <option value="5">Year 5 — Graduate</option>
+            <option value="" disabled <?= !isset($_POST['year_level']) ? 'selected' : '' ?>>Select year…</option>
+            <?php
+              $years = ['1'=>'Year 1 — Freshman','2'=>'Year 2 — Sophomore','3'=>'Year 3 — Junior','4'=>'Year 4 — Senior','5'=>'Year 5 — Graduate'];
+              foreach ($years as $v => $label) {
+                $sel = (isset($_POST['year_level']) && $_POST['year_level'] == $v) ? 'selected' : '';
+                echo "<option value=\"$v\" $sel>$label</option>";
+              }
+            ?>
           </select>
         </div>
       </div>
@@ -302,6 +397,130 @@ if ($_SERVER['REQUEST_METHOD'] == 'POST') {
     </form>
   </div>
 </main>
+
+<script>
+  // ─── Validation Rules ───────────────────────────────────────────────────────
+  const rules = {
+    full_name: {
+      // Must be letters, spaces, apostrophes, hyphens, dots only — NO digits
+      pattern: /^[a-zA-Z\s'\-\.]+$/,
+      errorId: 'full_name_err',
+      message: 'Full name cannot contain digits.'
+    },
+    student_id: {
+      // Letters, digits, dashes — no special chars
+      pattern: /^[A-Za-z0-9\-]+$/,
+      errorId: 'student_id_err',
+      message: 'Student ID can only contain letters, numbers, and dashes.'
+    },
+    phone: {
+      // Digits, +, -, spaces, parentheses only — NO letters
+      pattern: /^[\d\s\+\-\(\)]+$/,
+      errorId: 'phone_err',
+      message: 'Phone number cannot contain letters.'
+    }
+  };
+
+  // ─── Block invalid keypresses in real-time ───────────────────────────────────
+  document.getElementById('full_name').addEventListener('keypress', function(e) {
+    // Block digit keys
+    if (/\d/.test(e.key)) {
+      e.preventDefault();
+      showError('full_name', 'full_name_err');
+    }
+  });
+
+  document.getElementById('phone').addEventListener('keypress', function(e) {
+    // Block letter keys
+    if (/[a-zA-Z]/.test(e.key)) {
+      e.preventDefault();
+      showError('phone', 'phone_err');
+    }
+  });
+
+  // ─── Paste protection ────────────────────────────────────────────────────────
+  document.getElementById('full_name').addEventListener('paste', function(e) {
+    e.preventDefault();
+    const pasted = (e.clipboardData || window.clipboardData).getData('text');
+    const cleaned = pasted.replace(/\d/g, ''); // strip digits
+    document.execCommand('insertText', false, cleaned);
+    if (pasted !== cleaned) showError('full_name', 'full_name_err');
+  });
+
+  document.getElementById('phone').addEventListener('paste', function(e) {
+    e.preventDefault();
+    const pasted = (e.clipboardData || window.clipboardData).getData('text');
+    const cleaned = pasted.replace(/[a-zA-Z]/g, ''); // strip letters
+    document.execCommand('insertText', false, cleaned);
+    if (pasted !== cleaned) showError('phone', 'phone_err');
+  });
+
+  // ─── Inline validation on blur ───────────────────────────────────────────────
+  Object.keys(rules).forEach(fieldId => {
+    const input = document.getElementById(fieldId);
+    if (!input) return;
+
+    input.addEventListener('blur', function() {
+      const rule = rules[fieldId];
+      if (this.value && !rule.pattern.test(this.value)) {
+        showError(fieldId, rule.errorId);
+      } else {
+        clearError(fieldId, rule.errorId);
+      }
+    });
+
+    input.addEventListener('input', function() {
+      const rule = rules[fieldId];
+      if (rule.pattern.test(this.value) || this.value === '') {
+        clearError(fieldId, rule.errorId);
+      }
+    });
+  });
+
+  // ─── Form submit validation ──────────────────────────────────────────────────
+  document.getElementById('registerForm').addEventListener('submit', function(e) {
+    let valid = true;
+
+    Object.keys(rules).forEach(fieldId => {
+      const input = document.getElementById(fieldId);
+      if (!input) return;
+      const rule = rules[fieldId];
+      if (input.value && !rule.pattern.test(input.value)) {
+        showError(fieldId, rule.errorId);
+        valid = false;
+      }
+    });
+
+    // Email check
+    const email = document.getElementById('email');
+    const emailPattern = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
+    if (!emailPattern.test(email.value)) {
+      email.classList.add('is-invalid');
+      document.getElementById('email_err').style.display = 'block';
+      valid = false;
+    } else {
+      email.classList.remove('is-invalid');
+      document.getElementById('email_err').style.display = 'none';
+    }
+
+    if (!valid) e.preventDefault();
+  });
+
+  // ─── Helpers ─────────────────────────────────────────────────────────────────
+  function showError(fieldId, errorId) {
+    const input = document.getElementById(fieldId);
+    const errSpan = document.getElementById(errorId);
+    if (input) input.classList.add('is-invalid');
+    if (errSpan) errSpan.style.display = 'block';
+  }
+
+  function clearError(fieldId, errorId) {
+    const input = document.getElementById(fieldId);
+    const errSpan = document.getElementById(errorId);
+    if (input) input.classList.remove('is-invalid');
+    if (errSpan) errSpan.style.display = 'none';
+  }
+</script>
 
 </body>
 </html>
